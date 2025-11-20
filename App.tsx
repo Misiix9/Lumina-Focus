@@ -5,13 +5,13 @@ import {
   Brain, LogOut, Zap, Award, Clock, 
   CheckCircle2, RefreshCcw, Trophy, Music,
   Layers, ArrowRight, X, Settings, Moon, Sun, Globe, Volume2, Sparkles,
-  Shield, Sword, Gamepad2, ShoppingBag, Users, Radio, Smile, Frown, Meh, Mic, Eye, BarChart3, FileText, Map, GraduationCap, Ghost, Palette, Leaf, Archive, Scroll, Heart, Sword as SwordIcon
+  Shield, Sword, Gamepad2, ShoppingBag, Users, Radio, Smile, Frown, Meh, Mic, Eye, BarChart3, FileText, Map, GraduationCap, Ghost, Palette, Leaf, Archive, Scroll, Heart, Sword as SwordIcon, Lock, Wifi, WifiOff
 } from 'lucide-react';
 import { MonoCard } from './components/GlassCard';
-import { User, StudySession, TimerState, Language, QuizQuestion, Quest, Flashcard, Subject, AccentColor, Boss, ShopItem, Stock, ConceptMapData, Guild, ExamQuestion } from './types';
+import { User, StudySession, TimerState, Language, QuizQuestion, Quest, Flashcard, Subject, AccentColor, Boss, ShopItem, Stock, ConceptMapData, Guild, ExamQuestion, FirebaseConfig } from './types';
 import { FirebaseService } from './services/firebase';
-import { analyzeSession, generateQuiz, generateDailyQuests, generateFlashcards, explainConcept, generateStudyPlan, gradeEssay, generatePodcastScript, generateConceptMap, generateBoss, generateExam } from './services/geminiService';
-import { DEFAULT_SUBJECTS, TRANSLATIONS, ACCENT_COLORS, SHOP_ITEMS, MOCK_STOCKS, BOSS_TEMPLATES } from './constants';
+import { analyzeSession, generateQuiz, generateDailyQuests, generateFlashcards, explainConcept, generateStudyPlan, gradeEssay, generatePodcastScript, generateConceptMap, generateBoss, generateExam, setApiKey } from './services/geminiService';
+import { DEFAULT_SUBJECTS, TRANSLATIONS, ACCENT_COLORS, SHOP_ITEMS, MOCK_STOCKS, BOSS_TEMPLATES, GEMINI_API_KEY, FIREBASE_CONFIG } from './constants';
 
 // --- SOUNDS ---
 const AMBIENCE_TRACKS = [
@@ -23,6 +23,9 @@ const AMBIENCE_TRACKS = [
 
 const App: React.FC = () => {
   // --- STATE ---
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -65,10 +68,9 @@ const App: React.FC = () => {
 
   // Social
   const [socialSubTab, setSocialSubTab] = useState<'lounge' | 'leaderboard' | 'guilds'>('lounge');
-  const [guilds, setGuilds] = useState<Guild[]>([
-      { id: 'g1', name: 'Midnight Scholars', members: 124, totalXp: 50000, banner: '🌙' },
-      { id: 'g2', name: 'Code Wizards', members: 45, totalXp: 21000, banner: '🧙‍♂️' },
-  ]);
+  const [guilds, setGuilds] = useState<Guild[]>([]);
+  const [isCreatingGuild, setIsCreatingGuild] = useState(false);
+  const [newGuildName, setNewGuildName] = useState('');
 
   // Audio
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -84,7 +86,25 @@ const App: React.FC = () => {
 
   // --- INIT ---
   useEffect(() => {
-    init();
+    const initSystem = async () => {
+        try {
+            setApiKey(GEMINI_API_KEY);
+            const success = FirebaseService.initialize(FIREBASE_CONFIG);
+            if (success) {
+                setIsConfigured(true);
+                const currentUser = await FirebaseService.getCurrentUser();
+                if (currentUser) {
+                    await checkDailyQuests(currentUser);
+                    setUser(currentUser); // Ensure user is set
+                }
+                setIsOffline(FirebaseService.isUsingFallback());
+            }
+        } catch (e) {
+            console.error("Initialization failed", e);
+        }
+        setIsLoading(false);
+    };
+    initSystem();
   }, []);
 
   // Theme Sync
@@ -101,6 +121,16 @@ const App: React.FC = () => {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  // Load Guilds when tab active
+  useEffect(() => {
+      if(activeTab === 'social' && socialSubTab === 'guilds') {
+          FirebaseService.getGuilds().then(setGuilds);
+      }
+      if(activeTab === 'social' && socialSubTab === 'leaderboard') {
+          FirebaseService.getLeaderboard().then(setLeaderboard);
+      }
+  }, [activeTab, socialSubTab]);
 
   // Focus Shield Listener
   useEffect(() => {
@@ -134,19 +164,6 @@ const App: React.FC = () => {
     window.addEventListener('keypress', playType);
     return () => window.removeEventListener('keypress', playType);
   }, [typingSound]);
-
-
-  const init = async () => {
-    const currentUser = await FirebaseService.getCurrentUser();
-    if (currentUser) {
-      // Ensure new properties exist if old user
-      if (!currentUser.coins) currentUser.coins = 0;
-      if (!currentUser.stocks) currentUser.stocks = {};
-      if (!currentUser.pet) currentUser.pet = { name: 'Orb', stage: 'egg', xp: 0, type: 'void', hunger: 100, happiness: 100 };
-      await checkDailyQuests(currentUser);
-    }
-    setIsLoading(false);
-  };
 
   const checkDailyQuests = async (u: User) => {
     const now = Date.now();
@@ -231,10 +248,13 @@ const App: React.FC = () => {
         u = await FirebaseService.login(authData.email || authData.username, authData.password);
       }
       await checkDailyQuests(u);
+      setUser(u);
+      setIsOffline(FirebaseService.isUsingFallback());
     } catch (err: any) {
       setAuthError(err.message);
       setIsLoading(false);
     }
+    setIsLoading(false);
   };
 
   const startSession = () => {
@@ -344,6 +364,21 @@ const App: React.FC = () => {
       await FirebaseService.updateUser(user);
       setUser({...user});
   };
+  
+  const handleCreateGuild = async () => {
+      if(!user || !newGuildName) return;
+      const guild = await FirebaseService.createGuild(newGuildName, "🛡️", user);
+      setGuilds([...guilds, guild]);
+      setUser({...user, guildId: guild.id});
+      setIsCreatingGuild(false);
+  };
+  
+  const handleJoinGuild = async (guildId: string) => {
+      if(!user) return;
+      await FirebaseService.joinGuild(guildId, user);
+      setUser({...user, guildId: guildId});
+      alert("Joined Guild!");
+  };
 
   // --- AI LAB HANDLER ---
   const handleAiToolSubmit = async () => {
@@ -372,6 +407,7 @@ const App: React.FC = () => {
          <div className="relative z-10 space-y-4 animate-slide-up">
            <h1 className="text-8xl font-display font-bold tracking-tighter">LUMINA.</h1>
            <p className="text-xl font-mono text-gray-400 dark:text-gray-600">Monochrome Focus System</p>
+           {isOffline && <div className="inline-block px-2 py-1 rounded border border-white/20 text-xs bg-red-500/20 text-red-400 font-mono">OFFLINE MODE</div>}
          </div>
       </div>
       <div className="lg:w-1/2 flex items-center justify-center p-8">
@@ -640,7 +676,10 @@ const App: React.FC = () => {
              {/* RIGHT: Stats */}
              <div className="lg:col-span-3 space-y-4">
                 <MonoCard accent={user?.preferences.accent}>
-                   <div className="text-xs font-bold uppercase text-gray-400 mb-2">Level {user?.level}</div>
+                   <div className="flex justify-between items-center mb-2">
+                      <div className="text-xs font-bold uppercase text-gray-400">Level {user?.level}</div>
+                      <div className="text-xs font-bold flex items-center gap-1">{isOffline ? <WifiOff size={12} className="text-red-400"/> : <Wifi size={12} className="text-green-400"/>}</div>
+                   </div>
                    <div className="text-4xl font-bold">{user?.xp} XP</div>
                    <div className="w-full h-1 bg-gray-100 dark:bg-[#222] mt-4 rounded-full overflow-hidden">
                       <div className="h-full bg-[var(--accent-color)]" style={{width: `${(user!.xp % 1000)/10}%`}} />
@@ -942,13 +981,25 @@ const App: React.FC = () => {
                               <span>{guild.members} Members</span>
                               <span>{guild.totalXp} Guild XP</span>
                           </div>
-                          <button className="w-full py-2 border border-black dark:border-white rounded font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors">Join Guild</button>
+                          <button onClick={() => handleJoinGuild(guild.id)} className="w-full py-2 border border-black dark:border-white rounded font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors">Join Guild</button>
                       </MonoCard>
                   ))}
-                  <MonoCard className="flex items-center justify-center border-dashed" onClick={() => alert("Create Guild Modal")}>
-                      <div className="flex items-center gap-2 font-bold uppercase opacity-50 hover:opacity-100 cursor-pointer">
-                          <Plus size={20} /> Create Guild
-                      </div>
+                  <MonoCard className="flex flex-col items-center justify-center border-dashed" accent={user?.preferences.accent}>
+                      {!isCreatingGuild ? (
+                          <div onClick={() => setIsCreatingGuild(true)} className="flex items-center gap-2 font-bold uppercase opacity-50 hover:opacity-100 cursor-pointer">
+                              <Plus size={20} /> Create Guild
+                          </div>
+                      ) : (
+                          <div className="w-full space-y-4">
+                              <input 
+                                value={newGuildName}
+                                onChange={e => setNewGuildName(e.target.value)}
+                                className="w-full p-2 border rounded bg-transparent"
+                                placeholder="Guild Name..."
+                              />
+                              <button onClick={handleCreateGuild} className="w-full py-2 bg-black text-white font-bold uppercase">Create</button>
+                          </div>
+                      )}
                   </MonoCard>
               </div>
           )}

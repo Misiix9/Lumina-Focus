@@ -8,6 +8,16 @@ export enum Language {
 
 export type AccentColor = 'monochrome' | 'neon-green' | 'electric-blue' | 'crimson-red' | 'cyber-yellow';
 
+export interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  measurementId?: string;
+}
+
 export interface Achievement {
   id: string;
   title: { en: string; hu: string };

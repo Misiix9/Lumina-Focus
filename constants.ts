@@ -1,7 +1,20 @@
 
-import { Achievement, Language, Subject, ShopItem, Stock, Boss, AccentColor } from './types';
+import { Achievement, Language, Subject, ShopItem, Stock, Boss, AccentColor, FirebaseConfig } from './types';
 import { Sparkles, Shield, Zap, Palette, BookOpen } from 'lucide-react';
 import React from 'react';
+
+// --- CONFIGURATION ---
+export const GEMINI_API_KEY = "AIzaSyD0EZELv8tWp4NkqDR04EJm41icVtYkXoo";
+
+export const FIREBASE_CONFIG: FirebaseConfig = {
+  apiKey: "AIzaSyDqLKUzjhftF5IrDUdLBEyELbvZ7ozKo_g",
+  authDomain: "lumina-fecd9.firebaseapp.com",
+  projectId: "lumina-fecd9",
+  storageBucket: "lumina-fecd9.firebasestorage.app",
+  messagingSenderId: "419584547844",
+  appId: "1:419584547844:web:cd0a35c2514850616ce951",
+  measurementId: "G-68L1PK71M2"
+};
 
 export const LEVEL_THRESHOLDS = [0, 100, 300, 600, 1000, 1500, 2100, 3000, 5000, 10000, 20000];
 

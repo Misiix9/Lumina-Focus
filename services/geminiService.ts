@@ -3,9 +3,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Language, AiAnalysis, QuizQuestion, Flashcard, Quest, ConceptMapData, Boss, ExamQuestion } from "../types";
 import { BOSS_TEMPLATES } from "../constants";
 
+let dynamicApiKey: string = "";
+
+export const setApiKey = (key: string) => {
+    dynamicApiKey = key;
+};
+
 const getClient = () => {
-    if (!process.env.API_KEY) throw new Error("API Key Missing");
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const key = dynamicApiKey || process.env.API_KEY;
+    if (!key) throw new Error("Gemini API Key Missing. Please configure it in settings.");
+    return new GoogleGenAI({ apiKey: key });
 }
 
 // 1. Analyze Session & Generate Report
