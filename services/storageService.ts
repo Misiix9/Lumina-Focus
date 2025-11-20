@@ -58,7 +58,10 @@ export const StorageService = {
       lastQuestGeneration: 0,
       unlockedAchievements: [],
       preferences: { darkMode: false, language: Language.EN, accent: 'monochrome' },
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      masterDeck: [],
+      xpBoostExpiresAt: 0,
+      streakFreezeActive: false
     };
 
     db.users.push(newUser);
@@ -125,7 +128,8 @@ export const StorageService = {
           name,
           banner,
           members: 1,
-          totalXp: ownerUser.xp
+          totalXp: ownerUser.xp,
+          chat: []
       };
       db.guilds.push(newGuild);
       

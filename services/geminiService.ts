@@ -3,16 +3,10 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Language, AiAnalysis, QuizQuestion, Flashcard, Quest, ConceptMapData, Boss, ExamQuestion } from "../types";
 import { BOSS_TEMPLATES } from "../constants";
 
-let dynamicApiKey: string = "";
-
-export const setApiKey = (key: string) => {
-    dynamicApiKey = key;
-};
-
 const getClient = () => {
-    const key = dynamicApiKey || process.env.API_KEY;
-    if (!key) throw new Error("Gemini API Key Missing. Please configure it in settings.");
-    return new GoogleGenAI({ apiKey: key });
+    // API key must be obtained exclusively from process.env.API_KEY
+    // Directly initializing with process.env.API_KEY as per strict guidelines.
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 }
 
 // 1. Analyze Session & Generate Report

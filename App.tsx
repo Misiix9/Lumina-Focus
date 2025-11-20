@@ -5,12 +5,13 @@ import {
   Brain, LogOut, Zap, Award, Clock, 
   CheckCircle2, RefreshCcw, Trophy, Music,
   Layers, ArrowRight, X, Settings, Moon, Sun, Globe, Volume2, Sparkles,
-  Shield, Sword, Gamepad2, ShoppingBag, Users, Radio, Smile, Frown, Meh, Mic, Eye, BarChart3, FileText, Map, GraduationCap, Ghost, Palette, Leaf, Archive, Scroll, Heart, Sword as SwordIcon, Lock, Wifi, WifiOff
+  Shield, Sword, Gamepad2, ShoppingBag, Users, Radio, Smile, Frown, Meh, Mic, Eye, BarChart3, FileText, Map, GraduationCap, Ghost, Palette, Leaf, Archive, Scroll, Heart, Sword as SwordIcon, Lock, Wifi, WifiOff,
+  ArrowUpRight, ArrowDownRight, History, RotateCw, ThumbsUp, ThumbsDown, Calendar
 } from 'lucide-react';
 import { MonoCard } from './components/GlassCard';
 import { User, StudySession, TimerState, Language, QuizQuestion, Quest, Flashcard, Subject, AccentColor, Boss, ShopItem, Stock, ConceptMapData, Guild, ExamQuestion, FirebaseConfig } from './types';
 import { FirebaseService } from './services/firebase';
-import { analyzeSession, generateQuiz, generateDailyQuests, generateFlashcards, explainConcept, generateStudyPlan, gradeEssay, generatePodcastScript, generateConceptMap, generateBoss, generateExam, setApiKey } from './services/geminiService';
+import { analyzeSession, generateQuiz, generateDailyQuests, generateFlashcards, explainConcept, generateStudyPlan, gradeEssay, generatePodcastScript, generateConceptMap, generateBoss, generateExam } from './services/geminiService';
 import { DEFAULT_SUBJECTS, TRANSLATIONS, ACCENT_COLORS, SHOP_ITEMS, MOCK_STOCKS, BOSS_TEMPLATES, GEMINI_API_KEY, FIREBASE_CONFIG } from './constants';
 
 // --- SOUNDS ---
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   
   // Auth
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -55,16 +57,26 @@ const App: React.FC = () => {
   const [lastSession, setLastSession] = useState<StudySession | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [preMood, setPreMood] = useState<'happy'|'neutral'|'stressed'>('neutral');
+  const [quizAnswers, setQuizAnswers] = useState<number[]>([]);
+  const [quizScore, setQuizScore] = useState<number | null>(null);
   
+  // Flashcards Review Mode
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState<Flashcard[]>([]);
+  const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+
   // AI Lab
   const [aiToolMode, setAiToolMode] = useState<'explain' | 'plan' | 'essay' | 'podcast' | 'concept' | 'exam'>('explain');
   const [aiToolInput, setAiToolInput] = useState('');
   const [aiToolOutput, setAiToolOutput] = useState<any>(null);
+  const [examAnswers, setExamAnswers] = useState<number[]>([]);
 
   // Game Center
   const [activeBoss, setActiveBoss] = useState<Boss | null>(null);
   const [stocks, setStocks] = useState<Stock[]>(MOCK_STOCKS);
   const [gameSubTab, setGameSubTab] = useState<'market' | 'pet' | 'garden' | 'legacy'>('market');
+  const [showBossVictory, setShowBossVictory] = useState(false);
 
   // Social
   const [socialSubTab, setSocialSubTab] = useState<'lounge' | 'leaderboard' | 'guilds'>('lounge');
@@ -88,13 +100,16 @@ const App: React.FC = () => {
   useEffect(() => {
     const initSystem = async () => {
         try {
-            setApiKey(GEMINI_API_KEY);
             const success = FirebaseService.initialize(FIREBASE_CONFIG);
             if (success) {
                 setIsConfigured(true);
                 const currentUser = await FirebaseService.getCurrentUser();
                 if (currentUser) {
-                    await checkDailyQuests(currentUser);
+                    try {
+                        await checkDailyQuests(currentUser);
+                    } catch (e) {
+                        console.warn("Quest check failed on init", e);
+                    }
                     setUser(currentUser); // Ensure user is set
                 }
                 setIsOffline(FirebaseService.isUsingFallback());
@@ -121,6 +136,22 @@ const App: React.FC = () => {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  // Stock Market Simulation
+  useEffect(() => {
+      const interval = setInterval(() => {
+          setStocks(prevStocks => prevStocks.map(s => {
+              const change = (Math.random() - 0.5) * 2; // -1 to 1
+              const newPrice = Math.max(1, s.price + change);
+              return {
+                  ...s,
+                  price: newPrice,
+                  trend: change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
+              };
+          }));
+      }, 10000); // Update every 10s
+      return () => clearInterval(interval);
+  }, []);
 
   // Load Guilds when tab active
   useEffect(() => {
@@ -203,8 +234,7 @@ const App: React.FC = () => {
       setTimer(p => ({ ...p, isActive: false }));
       if (timer.mode === 'focus') {
           if (timer.isBattleMode && activeBoss && activeBoss.hp <= 0) {
-              // Boss Defeated
-              alert(t('bossDefeated'));
+              setShowBossVictory(true);
           }
           handleFinishSession();
       }
@@ -243,18 +273,28 @@ const App: React.FC = () => {
     try {
       let u: User;
       if (authMode === 'register') {
+        // Register requires Email, Password, Username
         u = await FirebaseService.register(authData.email, authData.password, authData.username);
       } else {
-        u = await FirebaseService.login(authData.email || authData.username, authData.password);
+        // Login: The input field is named 'email' in state but can hold username
+        u = await FirebaseService.login(authData.email, authData.password);
       }
-      await checkDailyQuests(u);
+      
+      // Safe check quests
+      try {
+        await checkDailyQuests(u);
+      } catch (questErr) {
+        console.warn("Failed to generate quests after auth", questErr);
+      }
+      
       setUser(u);
       setIsOffline(FirebaseService.isUsingFallback());
     } catch (err: any) {
+      console.error("Auth Error:", err);
       setAuthError(err.message);
+    } finally {
       setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const startSession = () => {
@@ -264,7 +304,6 @@ const App: React.FC = () => {
   const startTimerActual = () => {
       setSessionStep('running');
       setTimer(p => ({...p, isActive: true}));
-      // Spawn boss if battle mode
       if (timer.isBattleMode) {
           generateBoss('General', user!.level).then(setActiveBoss);
       }
@@ -289,6 +328,21 @@ const App: React.FC = () => {
       generateFlashcards(subject, notes, user.preferences.language)
     ]);
 
+    // Format cards for SRS
+    const formattedCards: Flashcard[] = cards.map(c => ({
+        id: Date.now() + Math.random().toString(),
+        subjectId: timer.subjectId!,
+        front: c.front,
+        back: c.back,
+        interval: 0,
+        repetitions: 0,
+        ease: 2.5,
+        nextReviewDate: Date.now()
+    }));
+
+    // Check Inventory Effects
+    const isXpBoosted = user.xpBoostExpiresAt && user.xpBoostExpiresAt > Date.now();
+
     const newSession: StudySession = {
       id: Date.now().toString(),
       subjectId: timer.subjectId,
@@ -297,7 +351,7 @@ const App: React.FC = () => {
       notes: notes,
       aiAnalysis: analysis,
       quiz: { questions: quiz },
-      flashcards: cards
+      flashcards: formattedCards
     };
 
     // Update Quests
@@ -308,21 +362,28 @@ const App: React.FC = () => {
       if (!q.isCompleted && q.progress >= q.target) {
         q.isCompleted = true;
         user.xp += q.xpReward;
-        user.coins += 50; // Coin reward
+        user.coins += 50;
       }
       return q;
     });
 
     user.sessions.push(newSession);
-    user.xp += (duration * 10) + (analysis.grade === 'S' ? 100 : 0);
-    user.coins += duration; // 1 coin per minute
+    // XP Calculation with Boost
+    let earnedXp = (duration * 10) + (analysis.grade === 'S' ? 100 : 0);
+    if (isXpBoosted) earnedXp *= 2;
+    
+    user.xp += earnedXp;
+    user.coins += duration;
     user.quests = updatedQuests;
     
+    // Add Cards to Master Deck
+    if (!user.masterDeck) user.masterDeck = [];
+    user.masterDeck = [...user.masterDeck, ...formattedCards];
+
     // Update Pet
     if (user.pet) {
         user.pet.xp += duration;
         user.pet.hunger = Math.max(0, user.pet.hunger - 5);
-        // Evolve
         if(user.pet.stage === 'egg' && user.pet.xp > 100) user.pet.stage = 'baby';
         if(user.pet.stage === 'baby' && user.pet.xp > 500) user.pet.stage = 'teen';
         if(user.pet.stage === 'teen' && user.pet.xp > 1000) user.pet.stage = 'adult';
@@ -346,16 +407,22 @@ const App: React.FC = () => {
   const buyItem = async (item: ShopItem) => {
       if(!user || user.coins < item.cost) return;
       user.coins -= item.cost;
+      
       if(item.type === 'consumable') {
           if(item.id === 'pet_food' && user.pet) {
               user.pet.hunger = Math.min(100, user.pet.hunger + 20);
               alert(t('feedPet'));
+          } else if (item.id === 'xp_boost') {
+              user.xpBoostExpiresAt = Date.now() + (60 * 60 * 1000); // 1 hr
+              alert("XP Boost Active for 1 Hour!");
+          } else if (item.id === 'freeze') {
+              user.streakFreezeActive = true;
+              alert("Streak Freeze Equipped!");
           } else {
               alert(`Used ${item.name}!`);
           }
       } else {
           user.inventory.push(item.id);
-          // Apply theme if it's a theme
           if(item.id.startsWith('theme_')) {
               const accent = item.id.replace('theme_', '') as AccentColor;
               user.preferences.accent = accent;
@@ -365,6 +432,104 @@ const App: React.FC = () => {
       setUser({...user});
   };
   
+  const handleTradeStock = async (symbol: string, action: 'buy' | 'sell') => {
+      if(!user) return;
+      const stock = stocks.find(s => s.symbol === symbol);
+      if(!stock) return;
+      
+      const price = stock.price;
+      
+      if(!user.stocks) user.stocks = {};
+      const owned = user.stocks[symbol] || 0;
+
+      if(action === 'buy') {
+          if(user.coins >= price) {
+              user.coins -= price;
+              user.stocks[symbol] = owned + 1;
+          } else {
+              alert("Not enough coins!");
+              return;
+          }
+      } else {
+          if(owned > 0) {
+              user.coins += price;
+              user.stocks[symbol] = owned - 1;
+          } else {
+              alert("You don't own this stock!");
+              return;
+          }
+      }
+      await FirebaseService.updateUser(user);
+      setUser({...user});
+  };
+  
+  // --- SRS FLASHCARD LOGIC ---
+  const startReview = () => {
+      if(!user || !user.masterDeck) return;
+      const due = user.masterDeck.filter(c => c.nextReviewDate <= Date.now());
+      if(due.length === 0) {
+          alert("No cards due for review!");
+          return;
+      }
+      setReviewQueue(due);
+      setCurrentReviewIndex(0);
+      setIsFlipped(false);
+      setShowReviewModal(true);
+  };
+
+  const handleCardReview = (quality: number) => { // 0-5
+      if(!user || !user.masterDeck) return;
+      const card = reviewQueue[currentReviewIndex];
+      
+      // SuperMemo-2 Logic
+      let { interval, repetitions, ease } = card;
+      
+      if (quality >= 3) {
+          if (repetitions === 0) {
+              interval = 1;
+          } else if (repetitions === 1) {
+              interval = 6;
+          } else {
+              interval = Math.round(interval * ease);
+          }
+          repetitions += 1;
+          ease = ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+      } else {
+          repetitions = 0;
+          interval = 1;
+      }
+      if (ease < 1.3) ease = 1.3;
+      
+      const updatedCard = {
+          ...card,
+          interval,
+          repetitions,
+          ease,
+          nextReviewDate: Date.now() + (interval * 24 * 60 * 60 * 1000)
+      };
+
+      // Update in Global Deck
+      const deckIdx = user.masterDeck.findIndex(c => c.id === card.id);
+      if(deckIdx !== -1) {
+          user.masterDeck[deckIdx] = updatedCard;
+          FirebaseService.updateUser(user);
+          setUser({...user});
+      }
+
+      // Next card
+      if(currentReviewIndex < reviewQueue.length - 1) {
+          setCurrentReviewIndex(p => p + 1);
+          setIsFlipped(false);
+      } else {
+          setShowReviewModal(false);
+          alert("Review Complete! +50 XP");
+          // Add Review XP
+          user.xp += 50;
+          FirebaseService.updateUser(user);
+          setUser({...user});
+      }
+  };
+
   const handleCreateGuild = async () => {
       if(!user || !newGuildName) return;
       const guild = await FirebaseService.createGuild(newGuildName, "🛡️", user);
@@ -380,7 +545,6 @@ const App: React.FC = () => {
       alert("Joined Guild!");
   };
 
-  // --- AI LAB HANDLER ---
   const handleAiToolSubmit = async () => {
       if(!aiToolInput.trim() || !user) return;
       setAiLoading(true);
@@ -418,10 +582,26 @@ const App: React.FC = () => {
            </div>
            {authError && <div className="text-red-500 text-sm">{authError}</div>}
            <form onSubmit={handleAuth} className="space-y-6">
-             <input type="text" value={authData.username} onChange={e => setAuthData({...authData, username: e.target.value})} className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" placeholder="Username" />
-             {authMode === 'register' && <input type="email" value={authData.email} onChange={e => setAuthData({...authData, email: e.target.value})} className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" placeholder="Email" />}
-             <input type="password" value={authData.password} onChange={e => setAuthData({...authData, password: e.target.value})} className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" placeholder="Password" />
-             <button className="w-full bg-black dark:bg-white text-white dark:text-black h-14 font-bold uppercase hover:opacity-90 transition-opacity">Start System</button>
+             
+             {/* Changed input type to text to accept both email and username */}
+             <input 
+                type={authMode === 'register' ? "email" : "text"} 
+                value={authData.email} 
+                onChange={e => setAuthData({...authData, email: e.target.value})} 
+                className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" 
+                placeholder={authMode === 'register' ? "Email" : "Email or Username"} 
+                required 
+             />
+             
+             {authMode === 'register' && (
+                <input type="text" value={authData.username} onChange={e => setAuthData({...authData, username: e.target.value})} className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" placeholder="Username" required />
+             )}
+             
+             <input type="password" value={authData.password} onChange={e => setAuthData({...authData, password: e.target.value})} className="w-full bg-transparent border-b border-gray-300 py-3 outline-none focus:border-black dark:focus:border-white transition-colors" placeholder="Password" required />
+             
+             <button className="w-full bg-black dark:bg-white text-white dark:text-black h-14 font-bold uppercase hover:opacity-90 transition-opacity">
+                {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Create Account')}
+             </button>
            </form>
         </div>
       </div>
@@ -623,7 +803,6 @@ const App: React.FC = () => {
                                         setPreMood(m as any);
                                         startTimerActual();
                                     } else {
-                                        // Post mood logic can be saved here
                                         setSessionStep('notes');
                                     }
                                 }} className="flex flex-col items-center gap-2 hover:scale-110 transition-transform">
@@ -654,7 +833,7 @@ const App: React.FC = () => {
                    </MonoCard>
                 )}
                 
-                {/* ANALYSIS */}
+                {/* ANALYSIS RESULT */}
                 {sessionStep === 'analysis' && lastSession?.aiAnalysis && (
                     <MonoCard className="animate-fade-in" accent={user?.preferences.accent}>
                         <div className="flex justify-between items-start border-b border-gray-100 pb-4 mb-4">
@@ -666,9 +845,72 @@ const App: React.FC = () => {
                             <div className="text-sm font-medium leading-tight">{lastSession.aiAnalysis.summary}</div>
                             </div>
                         </div>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <button onClick={() => { setSessionStep('quiz'); setQuizScore(null); setQuizAnswers([]); }} className="p-3 border rounded-lg font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#222]">{t('takeQuiz')}</button>
+                            <button onClick={() => setSessionStep('flashcards')} className="p-3 border rounded-lg font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#222]">View Flashcards</button>
+                        </div>
                         <button onClick={() => setSessionStep('idle')} className="w-full py-3 bg-gray-100 dark:bg-[#222] font-bold uppercase hover:bg-gray-200 dark:hover:bg-[#333]">
                         {t('done')}
                         </button>
+                    </MonoCard>
+                )}
+
+                {/* QUIZ MODE */}
+                {sessionStep === 'quiz' && lastSession?.quiz && (
+                    <MonoCard className="animate-fade-in" accent={user?.preferences.accent}>
+                        <h3 className="font-bold text-xl mb-4">Post-Session Quiz</h3>
+                        {lastSession.quiz.questions.map((q, i) => (
+                            <div key={i} className="mb-6">
+                                <p className="font-bold mb-2">{i+1}. {q.question}</p>
+                                <div className="space-y-2">
+                                    {q.options.map((opt, idx) => (
+                                        <button 
+                                            key={idx} 
+                                            onClick={() => {
+                                                const newAnswers = [...quizAnswers];
+                                                newAnswers[i] = idx;
+                                                setQuizAnswers(newAnswers);
+                                            }}
+                                            className={`w-full text-left p-3 rounded border ${quizAnswers[i] === idx ? 'bg-black text-white dark:bg-white dark:text-black' : 'hover:bg-gray-50 dark:hover:bg-[#222]'}`}
+                                        >
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        {quizScore !== null ? (
+                            <div className="text-center text-2xl font-bold mb-4">Score: {quizScore} / {lastSession.quiz.questions.length}</div>
+                        ) : (
+                            <button onClick={() => {
+                                let score = 0;
+                                lastSession.quiz?.questions.forEach((q, i) => {
+                                    if(quizAnswers[i] === q.correctIndex) score++;
+                                });
+                                setQuizScore(score);
+                                if(score === lastSession.quiz?.questions.length && user) {
+                                    user.xp += 50;
+                                    FirebaseService.updateUser(user);
+                                }
+                            }} className="w-full py-3 bg-black text-white font-bold uppercase">Submit Quiz</button>
+                        )}
+                        <button onClick={() => setSessionStep('analysis')} className="w-full mt-2 text-xs underline">Back</button>
+                    </MonoCard>
+                )}
+
+                {/* FLASHCARDS PREVIEW */}
+                {sessionStep === 'flashcards' && lastSession?.flashcards && (
+                    <MonoCard className="animate-fade-in" accent={user?.preferences.accent}>
+                        <h3 className="font-bold text-xl mb-4">New Flashcards Added</h3>
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto">
+                            {lastSession.flashcards.map((card, i) => (
+                                <div key={i} className="p-4 border rounded bg-gray-50 dark:bg-[#111]">
+                                    <div className="font-bold text-sm mb-1">Q: {card.front}</div>
+                                    <div className="text-xs opacity-70">A: {card.back}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={() => setSessionStep('analysis')} className="w-full mt-4 py-3 bg-black text-white font-bold uppercase">Okay</button>
                     </MonoCard>
                 )}
              </div>
@@ -690,6 +932,14 @@ const App: React.FC = () => {
                     <h3 className="text-xs font-bold uppercase mb-2">{t('timeline')}</h3>
                     {renderTimeline()}
                 </MonoCard>
+
+                <button onClick={() => setShowHistoryModal(true)} className="w-full py-3 border rounded-xl flex items-center justify-center gap-2 font-bold hover:bg-gray-50 dark:hover:bg-[#111]">
+                    <History size={16}/> {t('history')}
+                </button>
+
+                <button onClick={startReview} className="w-full py-3 border rounded-xl flex items-center justify-center gap-2 font-bold hover:bg-gray-50 dark:hover:bg-[#111]">
+                    <RotateCw size={16}/> {t('reviewFlashcards')}
+                </button>
 
                 <button onClick={() => setEyeYogaActive(true)} className="w-full py-3 border rounded-xl flex items-center justify-center gap-2 font-bold hover:bg-gray-50 dark:hover:bg-[#111]">
                     <Eye size={16}/> {t('eyeYoga')}
@@ -760,7 +1010,15 @@ const App: React.FC = () => {
                                       {q.options && (
                                           <div className="space-y-2">
                                               {q.options.map((opt, idx) => (
-                                                  <button key={idx} className="block w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-[#222] rounded border border-transparent hover:border-gray-200">
+                                                  <button 
+                                                    key={idx} 
+                                                    onClick={() => {
+                                                        const newAns = [...examAnswers];
+                                                        newAns[i] = idx;
+                                                        setExamAnswers(newAns);
+                                                    }}
+                                                    className={`block w-full text-left p-2 rounded border ${examAnswers[i] === idx ? (idx === q.correctIndex ? 'bg-green-500 text-white' : 'bg-red-500 text-white') : 'hover:bg-gray-100 dark:hover:bg-[#222]'}`}
+                                                  >
                                                       {opt}
                                                   </button>
                                               ))}
@@ -817,10 +1075,27 @@ const App: React.FC = () => {
                                 </div>
                                 <div className="text-right">
                                     <div className={`font-mono ${stock.trend === 'up' ? 'text-green-500' : 'text-red-500'}`}>${stock.price.toFixed(2)}</div>
-                                    <button className="text-[10px] bg-black text-white dark:bg-white dark:text-black px-2 py-1 rounded mt-1">{t('buy')}</button>
+                                    <div className="flex gap-1 mt-1">
+                                        <button onClick={() => handleTradeStock(stock.symbol, 'buy')} className="text-[10px] bg-black text-white dark:bg-white dark:text-black px-2 py-1 rounded">{t('buy')}</button>
+                                        <button onClick={() => handleTradeStock(stock.symbol, 'sell')} className="text-[10px] border border-black dark:border-white px-2 py-1 rounded">Sell</button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
+                    </div>
+                    {/* Portfolio Summary */}
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-[#333]">
+                        <div className="text-xs font-bold uppercase mb-2">Your Portfolio</div>
+                        {Object.entries(user?.stocks || {}).map(([sym, count]) => {
+                            if(count === 0) return null;
+                            const currentPrice = stocks.find(s => s.symbol === sym)?.price || 0;
+                            return (
+                                <div key={sym} className="flex justify-between text-sm">
+                                    <span>{sym} x{count}</span>
+                                    <span>${(count * currentPrice).toFixed(2)}</span>
+                                </div>
+                            )
+                        })}
                     </div>
                 </MonoCard>
 
@@ -973,34 +1248,74 @@ const App: React.FC = () => {
 
           {socialSubTab === 'guilds' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {guilds.map(guild => (
-                      <MonoCard key={guild.id} accent={user?.preferences.accent} className="relative overflow-hidden">
-                          <div className="absolute top-0 right-0 p-4 text-6xl opacity-10">{guild.banner}</div>
-                          <h3 className="text-xl font-bold mb-1">{guild.banner} {guild.name}</h3>
-                          <div className="flex gap-4 text-xs font-mono opacity-60 mb-4">
-                              <span>{guild.members} Members</span>
-                              <span>{guild.totalXp} Guild XP</span>
-                          </div>
-                          <button onClick={() => handleJoinGuild(guild.id)} className="w-full py-2 border border-black dark:border-white rounded font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors">Join Guild</button>
+                  {user?.guildId && guilds.find(g => g.id === user.guildId) ? (
+                      <MonoCard accent={user?.preferences.accent} className="md:col-span-2">
+                          {(() => {
+                              const myGuild = guilds.find(g => g.id === user.guildId);
+                              return (
+                                  <div>
+                                      <div className="flex justify-between items-start mb-6">
+                                          <div>
+                                              <h3 className="text-3xl font-bold">{myGuild?.banner} {myGuild?.name}</h3>
+                                              <p className="text-sm opacity-60">My Guild Dashboard</p>
+                                          </div>
+                                          <button onClick={() => {
+                                              if(confirm("Leave guild?")) {
+                                                  // Simplified leave logic
+                                                  setUser({...user, guildId: undefined});
+                                                  FirebaseService.updateUser({...user, guildId: undefined});
+                                              }
+                                          }} className="text-xs text-red-500 border border-red-200 px-3 py-1 rounded">Leave</button>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-4 mb-8">
+                                          <div className="p-4 bg-gray-50 dark:bg-[#222] rounded-lg text-center">
+                                              <div className="text-2xl font-bold">{myGuild?.members}</div>
+                                              <div className="text-xs uppercase">Members</div>
+                                          </div>
+                                          <div className="p-4 bg-gray-50 dark:bg-[#222] rounded-lg text-center">
+                                              <div className="text-2xl font-bold">{myGuild?.totalXp}</div>
+                                              <div className="text-xs uppercase">Total XP</div>
+                                          </div>
+                                      </div>
+                                      <div className="h-40 border border-dashed rounded-lg flex items-center justify-center opacity-50">
+                                          Guild Chat Coming Soon...
+                                      </div>
+                                  </div>
+                              )
+                          })()}
                       </MonoCard>
-                  ))}
-                  <MonoCard className="flex flex-col items-center justify-center border-dashed" accent={user?.preferences.accent}>
-                      {!isCreatingGuild ? (
-                          <div onClick={() => setIsCreatingGuild(true)} className="flex items-center gap-2 font-bold uppercase opacity-50 hover:opacity-100 cursor-pointer">
-                              <Plus size={20} /> Create Guild
-                          </div>
-                      ) : (
-                          <div className="w-full space-y-4">
-                              <input 
-                                value={newGuildName}
-                                onChange={e => setNewGuildName(e.target.value)}
-                                className="w-full p-2 border rounded bg-transparent"
-                                placeholder="Guild Name..."
-                              />
-                              <button onClick={handleCreateGuild} className="w-full py-2 bg-black text-white font-bold uppercase">Create</button>
-                          </div>
-                      )}
-                  </MonoCard>
+                  ) : (
+                      <>
+                        {guilds.map(guild => (
+                            <MonoCard key={guild.id} accent={user?.preferences.accent} className="relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 text-6xl opacity-10">{guild.banner}</div>
+                                <h3 className="text-xl font-bold mb-1">{guild.banner} {guild.name}</h3>
+                                <div className="flex gap-4 text-xs font-mono opacity-60 mb-4">
+                                    <span>{guild.members} Members</span>
+                                    <span>{guild.totalXp} Guild XP</span>
+                                </div>
+                                <button onClick={() => handleJoinGuild(guild.id)} className="w-full py-2 border border-black dark:border-white rounded font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors">Join Guild</button>
+                            </MonoCard>
+                        ))}
+                        <MonoCard className="flex flex-col items-center justify-center border-dashed" accent={user?.preferences.accent}>
+                            {!isCreatingGuild ? (
+                                <div onClick={() => setIsCreatingGuild(true)} className="flex items-center gap-2 font-bold uppercase opacity-50 hover:opacity-100 cursor-pointer">
+                                    <Plus size={20} /> Create Guild
+                                </div>
+                            ) : (
+                                <div className="w-full space-y-4">
+                                    <input 
+                                        value={newGuildName}
+                                        onChange={e => setNewGuildName(e.target.value)}
+                                        className="w-full p-2 border rounded bg-transparent"
+                                        placeholder="Guild Name..."
+                                    />
+                                    <button onClick={handleCreateGuild} className="w-full py-2 bg-black text-white font-bold uppercase">Create</button>
+                                </div>
+                            )}
+                        </MonoCard>
+                      </>
+                  )}
               </div>
           )}
       </div>
@@ -1042,6 +1357,79 @@ const App: React.FC = () => {
       {eyeYogaActive && (
           <div className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center" onClick={() => setEyeYogaActive(false)}>
               <div className="w-8 h-8 bg-white rounded-full animate-float"/>
+          </div>
+      )}
+
+      {/* BOSS VICTORY MODAL */}
+      {showBossVictory && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowBossVictory(false)}>
+              <MonoCard className="text-center p-12 animate-scale-in">
+                  <div className="text-6xl mb-4">🏆</div>
+                  <h2 className="text-4xl font-bold font-display mb-2">VICTORY!</h2>
+                  <p>You defeated {activeBoss?.name}</p>
+                  <div className="mt-8 text-xl font-mono text-green-500">+500 XP</div>
+              </MonoCard>
+          </div>
+      )}
+
+      {/* REVIEW MODAL */}
+      {showReviewModal && reviewQueue.length > 0 && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md">
+              <div className="w-full max-w-md perspective-1000">
+                  <div className={`relative w-full h-96 transition-transform duration-700 transform-style-3d cursor-pointer ${isFlipped ? 'rotate-y-180' : ''}`} onClick={() => setIsFlipped(!isFlipped)}>
+                       {/* FRONT */}
+                       <div className="absolute w-full h-full backface-hidden bg-white dark:bg-[#111] border rounded-2xl flex flex-col items-center justify-center p-8 text-center">
+                           <div className="text-xs font-bold uppercase opacity-50 mb-4">Question</div>
+                           <div className="text-2xl font-display">{reviewQueue[currentReviewIndex].front}</div>
+                           <div className="absolute bottom-4 text-xs opacity-30">Tap to flip</div>
+                       </div>
+                       {/* BACK */}
+                       <div className="absolute w-full h-full backface-hidden bg-black dark:bg-white text-white dark:text-black rounded-2xl flex flex-col items-center justify-center p-8 text-center rotate-y-180">
+                           <div className="text-xs font-bold uppercase opacity-50 mb-4">Answer</div>
+                           <div className="text-xl">{reviewQueue[currentReviewIndex].back}</div>
+                       </div>
+                  </div>
+                  
+                  {isFlipped && (
+                      <div className="flex gap-2 mt-8 justify-center">
+                          <button onClick={() => handleCardReview(1)} className="bg-red-500 text-white px-4 py-2 rounded font-bold">Hard</button>
+                          <button onClick={() => handleCardReview(3)} className="bg-yellow-500 text-white px-4 py-2 rounded font-bold">Good</button>
+                          <button onClick={() => handleCardReview(5)} className="bg-green-500 text-white px-4 py-2 rounded font-bold">Easy</button>
+                      </div>
+                  )}
+                  <button onClick={() => setShowReviewModal(false)} className="absolute top-4 right-4 text-white opacity-50"><X/></button>
+              </div>
+          </div>
+      )}
+
+      {/* HISTORY MODAL */}
+      {showHistoryModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowHistoryModal(false)}>
+              <MonoCard className="w-full max-w-2xl max-h-[80vh] overflow-y-auto" onClick={() => {}}>
+                  <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold">Session History</h2>
+                      <button onClick={() => setShowHistoryModal(false)}><X/></button>
+                  </div>
+                  <div className="space-y-4">
+                      {user.sessions.slice().reverse().map(session => (
+                          <div key={session.id} className="p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-[#222]">
+                              <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                      <div className="font-bold text-lg">{user.subjects.find(s => s.id === session.subjectId)?.name || 'Unknown Subject'}</div>
+                                      <div className="text-xs opacity-50">{new Date(session.timestamp).toLocaleDateString()} • {session.durationMinutes} min</div>
+                                  </div>
+                                  <div className="text-2xl font-display font-bold">{session.aiAnalysis?.grade || '-'}</div>
+                              </div>
+                              <p className="text-sm opacity-80 mb-2">"{session.notes}"</p>
+                              {session.aiAnalysis && (
+                                  <div className="text-xs bg-gray-100 dark:bg-[#333] p-2 rounded">
+                                      AI: {session.aiAnalysis.summary}
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+              </MonoCard>
           </div>
       )}
 

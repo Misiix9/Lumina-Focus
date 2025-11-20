@@ -1,10 +1,21 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LUMINA | Monochrome Focus</title>
+    <script>
+      // CRITICAL POLYFILL FOR PRODUCTION/PREVIEW
+      // This prevents "process is not defined" errors and injects your API keys
+      window.process = {
+        env: {
+          NODE_ENV: 'production',
+          API_KEY: 'AIzaSyD0EZELv8tWp4NkqDR04EJm41icVtYkXoo',
+          VITE_GEMINI_API_KEY: 'AIzaSyD0EZELv8tWp4NkqDR04EJm41icVtYkXoo',
+          VITE_FIREBASE_API_KEY: 'AIzaSyDqLKUzjhftF5IrDUdLBEyELbvZ7ozKo_g'
+        }
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -128,7 +139,9 @@
     "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
     "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4"
   }
 }
 </script>

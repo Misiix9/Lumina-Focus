@@ -44,14 +44,18 @@ export interface ExamQuestion {
   question: string;
   type: 'multiple_choice' | 'essay';
   options?: string[];
+  correctIndex?: number;
 }
 
 export interface Flashcard {
+  id: string; // Added ID for global tracking
+  subjectId: string; // Link to subject
   front: string;
   back: string;
-  nextReviewDate?: number; // SRS
-  interval?: number; // SRS interval in days
-  ease?: number; // SRS ease factor
+  nextReviewDate: number; // SRS timestamp
+  interval: number; // SRS interval in days
+  ease: number; // SRS ease factor
+  repetitions: number;
 }
 
 export interface Quest {
@@ -130,6 +134,7 @@ export interface Guild {
   members: number;
   totalXp: number;
   banner: string;
+  chat?: { user: string, msg: string }[]; // Simulated chat
 }
 
 // --- AI LAB TYPES ---
@@ -179,6 +184,11 @@ export interface User {
   stocks: { [symbol: string]: number }; // Owned stocks
   activeBoss?: Boss;
   guildId?: string;
+  
+  // SRS & Effects
+  masterDeck: Flashcard[];
+  xpBoostExpiresAt?: number; // Timestamp
+  streakFreezeActive?: boolean;
 }
 
 export interface TimerState {

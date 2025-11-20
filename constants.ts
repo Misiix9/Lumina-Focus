@@ -4,16 +4,22 @@ import { Sparkles, Shield, Zap, Palette, BookOpen } from 'lucide-react';
 import React from 'react';
 
 // --- CONFIGURATION ---
-export const GEMINI_API_KEY = "AIzaSyD0EZELv8tWp4NkqDR04EJm41icVtYkXoo";
+// Using safe access to process.env for non-Vite environments (via polyfill) 
+// OR import.meta.env for Vite builds.
+
+// @ts-ignore
+const safeEnv = (typeof process !== 'undefined' && process.env) ? process.env : (import.meta as any).env || {};
+
+export const GEMINI_API_KEY = safeEnv.VITE_GEMINI_API_KEY || "AIzaSyD0EZELv8tWp4NkqDR04EJm41icVtYkXoo";
 
 export const FIREBASE_CONFIG: FirebaseConfig = {
-  apiKey: "AIzaSyDqLKUzjhftF5IrDUdLBEyELbvZ7ozKo_g",
-  authDomain: "lumina-fecd9.firebaseapp.com",
-  projectId: "lumina-fecd9",
-  storageBucket: "lumina-fecd9.firebasestorage.app",
-  messagingSenderId: "419584547844",
-  appId: "1:419584547844:web:cd0a35c2514850616ce951",
-  measurementId: "G-68L1PK71M2"
+  apiKey: safeEnv.VITE_FIREBASE_API_KEY || "AIzaSyDqLKUzjhftF5IrDUdLBEyELbvZ7ozKo_g",
+  authDomain: safeEnv.VITE_FIREBASE_AUTH_DOMAIN || "lumina-fecd9.firebaseapp.com",
+  projectId: safeEnv.VITE_FIREBASE_PROJECT_ID || "lumina-fecd9",
+  storageBucket: safeEnv.VITE_FIREBASE_STORAGE_BUCKET || "lumina-fecd9.firebasestorage.app",
+  messagingSenderId: safeEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || "419584547844",
+  appId: safeEnv.VITE_FIREBASE_APP_ID || "1:419584547844:web:cd0a35c2514850616ce951",
+  measurementId: safeEnv.VITE_FIREBASE_MEASUREMENT_ID || "G-68L1PK71M2"
 };
 
 export const LEVEL_THRESHOLDS = [0, 100, 300, 600, 1000, 1500, 2100, 3000, 5000, 10000, 20000];
