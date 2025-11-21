@@ -17,6 +17,7 @@ export const MonoCard: React.FC<MonoCardProps> = ({ children, className = '', st
       } as React.CSSProperties}
       className={`
       bg-white dark:bg-[#0A0A0A]
+      bg-gradient-to-br from-white to-gray-50 dark:from-[#0A0A0A] dark:to-[#000]
       border border-gray-200 dark:border-[#222]
       rounded-xl
       transition-all duration-300 ease-out

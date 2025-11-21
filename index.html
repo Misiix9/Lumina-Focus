@@ -96,11 +96,11 @@
         font-family: 'Space Grotesk', sans-serif;
       }
 
-      /* Minimalist Dot Grid */
+      /* Minimalist Dot Grid - Applied to separate div now */
       .bg-dot-grid {
-        background-image: radial-gradient(var(--accent-color) 0.5px, transparent 0.5px);
+        background-image: radial-gradient(var(--accent-color) 1px, transparent 1px);
         background-size: 32px 32px;
-        opacity: 0.4;
+        opacity: 0.15; /* Low opacity only on the background pattern */
       }
       
       /* Noise Overlay */
@@ -112,10 +112,10 @@
         bottom: -50%;
         width: 200%;
         height: 200vh;
-        background: transparent url('http://assets.iceable.com/img/noise-transparent.png') repeat 0 0;
-        background-repeat: repeat;
+        background: transparent url('https://grainy-gradients.vercel.app/noise.svg') repeat 0 0;
+        filter: contrast(150%) brightness(100%);
         animation: grain 8s steps(10) infinite;
-        opacity: 0.03;
+        opacity: 0.05;
         z-index: 9999;
         pointer-events: none;
       }
@@ -168,7 +168,8 @@
 }
 </script>
 </head>
-  <body class="bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-gray-100 transition-colors duration-500 ease-in-out bg-dot-grid overflow-x-hidden selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
+  <body class="bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-gray-100 transition-colors duration-500 ease-in-out overflow-x-hidden selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div class="fixed inset-0 z-0 pointer-events-none bg-dot-grid"></div>
     <div class="bg-noise"></div>
     <div id="root" class="relative z-10"></div>
     <script type="module" src="./index.tsx"></script>
