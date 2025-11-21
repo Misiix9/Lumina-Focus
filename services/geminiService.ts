@@ -320,3 +320,39 @@ export const generateExam = async (topic: string, language: Language): Promise<E
         return [];
     }
 }
+
+// 12. Start Debate
+export const startDebate = async (topic: string, language: Language): Promise<string> => {
+    try {
+        const ai = getClient();
+        const prompt = `
+          I want to debate about "${topic}". You are playing the role of a critical opponent.
+          State your opening argument against or challenging the topic in a provocative but intellectual way.
+          Keep it under 3 sentences.
+          Language: ${language === Language.HU ? 'Hungarian' : 'English'}
+        `;
+        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+        return response.text || "";
+    } catch(e) { return "I am unable to debate right now."; }
+}
+
+// 13. Continue Debate
+export const continueDebate = async (history: {role: 'user'|'model', text: string}[], language: Language): Promise<string> => {
+    try {
+        const ai = getClient();
+        const chat = ai.chats.create({
+             model: 'gemini-2.5-flash',
+             config: {
+                 systemInstruction: `You are a critical debate opponent. Keep responses under 50 words. Language: ${language}`
+             }
+        });
+        
+        // Replay history to restore state (simplified, just sending last message for now or full flow if API supports)
+        // For this stateless example, we just send the full context or last message.
+        const lastUserMsg = history[history.length - 1].text;
+        const response = await chat.sendMessage({ message: lastUserMsg });
+        return response.text || "";
+    } catch (e) {
+        return "Let's agree to disagree.";
+    }
+}

@@ -1,5 +1,5 @@
 
-import { Achievement, Language, Subject, ShopItem, Stock, Boss, AccentColor, FirebaseConfig } from './types';
+import { Achievement, Language, Subject, ShopItem, Stock, Boss, AccentColor, FirebaseConfig, SkillNode } from './types';
 import { Sparkles, Shield, Zap, Palette, BookOpen } from 'lucide-react';
 import React from 'react';
 
@@ -44,6 +44,15 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'xp_boost', name: 'XP Potion (1h)', cost: 300, type: 'consumable', icon: React.createElement(Zap, { size: 16 }), effect: '2x XP for 1 hour' },
   { id: 'theme_neon', name: 'Neon Theme', cost: 1000, type: 'cosmetic', icon: React.createElement(Palette, { size: 16 }) },
   { id: 'pet_food', name: 'Digital Berries', cost: 50, type: 'consumable', icon: React.createElement(Sparkles, { size: 16 }), effect: 'Feeds pet' },
+];
+
+export const SKILL_TREE_NODES: SkillNode[] = [
+    { id: 'root', label: 'Novice', description: 'Start your journey', requiredLevel: 1, icon: '🌱' },
+    { id: 'market', label: 'Marketplace', description: 'Unlock Stock Market', requiredLevel: 2, icon: '📈', parentId: 'root' },
+    { id: 'pet', label: 'Companion', description: 'Unlock Focus Pet', requiredLevel: 2, icon: '🥚', parentId: 'root' },
+    { id: 'boss', label: 'Battle Mode', description: 'Unlock Boss Battles', requiredLevel: 5, icon: '⚔️', parentId: 'pet' },
+    { id: 'guild', label: 'Social', description: 'Unlock Guilds', requiredLevel: 10, icon: '🛡️', parentId: 'market' },
+    { id: 'lab', label: 'AI Lab', description: 'Unlock Advanced AI Tools', requiredLevel: 3, icon: '🧠', parentId: 'root' },
 ];
 
 export const MOCK_STOCKS: Stock[] = [
@@ -189,6 +198,9 @@ export const TRANSLATIONS = {
     bossDefeated: "Boss Defeated!",
     streakFreeze: "Streak Freeze",
     feedPet: "Feed Pet",
+    skills: "Skills",
+    exportData: "Export Data",
+    timerSettings: "Timer Settings",
   },
   [Language.HU]: {
     // ... Existing ...
@@ -279,5 +291,8 @@ export const TRANSLATIONS = {
     bossDefeated: "Főnök Legyőzve!",
     streakFreeze: "Széria Fagyasztó",
     feedPet: "Állat Etetése",
+    skills: "Képességek",
+    exportData: "Adatok Exportálása",
+    timerSettings: "Időzítő Beállítások",
   }
 };

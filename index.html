@@ -38,6 +38,7 @@
               'pulse-slow': 'pulse 3s infinite',
               'wiggle': 'wiggle 1s ease-in-out infinite',
               'float': 'float 6s ease-in-out infinite',
+              'grain': 'grain 8s steps(10) infinite',
             },
             keyframes: {
               fadeIn: {
@@ -59,6 +60,18 @@
               float: {
                 '0%, 100%': { transform: 'translateY(0)' },
                 '50%': { transform: 'translateY(-10px)' },
+              },
+              grain: {
+                '0%, 100%': { transform: 'translate(0, 0)' },
+                '10%': { transform: 'translate(-5%, -10%)' },
+                '20%': { transform: 'translate(-15%, 5%)' },
+                '30%': { transform: 'translate(7%, -25%)' },
+                '40%': { transform: 'translate(-5%, 25%)' },
+                '50%': { transform: 'translate(-15%, 10%)' },
+                '60%': { transform: 'translate(15%, 0%)' },
+                '70%': { transform: 'translate(0%, 15%)' },
+                '80%': { transform: 'translate(3%, 35%)' },
+                '90%': { transform: 'translate(-10%, 10%)' },
               }
             }
           },
@@ -87,7 +100,24 @@
       .bg-dot-grid {
         background-image: radial-gradient(var(--accent-color) 0.5px, transparent 0.5px);
         background-size: 32px 32px;
-        opacity: 0.8;
+        opacity: 0.4;
+      }
+      
+      /* Noise Overlay */
+      .bg-noise {
+        position: fixed;
+        top: -50%;
+        left: -50%;
+        right: -50%;
+        bottom: -50%;
+        width: 200%;
+        height: 200vh;
+        background: transparent url('http://assets.iceable.com/img/noise-transparent.png') repeat 0 0;
+        background-repeat: repeat;
+        animation: grain 8s steps(10) infinite;
+        opacity: 0.03;
+        z-index: 9999;
+        pointer-events: none;
       }
 
       .no-scrollbar::-webkit-scrollbar {
@@ -98,20 +128,6 @@
         scrollbar-width: none;
       }
       
-      /* Card Flip 3D */
-      .perspective-1000 {
-        perspective: 1000px;
-      }
-      .transform-style-3d {
-        transform-style: preserve-3d;
-      }
-      .backface-hidden {
-        backface-visibility: hidden;
-      }
-      .rotate-y-180 {
-        transform: rotateY(180deg);
-      }
-
       /* Focus Shield Blur */
       .blur-shield {
         backdrop-filter: blur(20px);
@@ -126,6 +142,12 @@
         to {
           stroke-dashoffset: -8;
         }
+      }
+      
+      /* Custom Checkbox */
+      .checkbox-wrapper {
+        display: inline-flex;
+        align-items: center;
       }
     </style>
   <script type="importmap">
@@ -146,8 +168,9 @@
 }
 </script>
 </head>
-  <body class="bg-white text-gray-900 dark:bg-[#050505] dark:text-gray-100 transition-colors duration-500 ease-in-out bg-dot-grid">
-    <div id="root"></div>
+  <body class="bg-gray-50 text-gray-900 dark:bg-[#050505] dark:text-gray-100 transition-colors duration-500 ease-in-out bg-dot-grid overflow-x-hidden selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div class="bg-noise"></div>
+    <div id="root" class="relative z-10"></div>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

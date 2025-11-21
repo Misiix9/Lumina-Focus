@@ -52,16 +52,29 @@ export const StorageService = {
       stocks: {},
       pet: { name: 'Orb', stage: 'egg', xp: 0, type: 'void', hunger: 100, happiness: 100 },
       lastStudyDate: null,
+      lastLoginDate: Date.now(),
       subjects: DEFAULT_SUBJECTS.map(s => ({...s, sessionsCount: 0})),
       sessions: [],
       quests: [],
       lastQuestGeneration: 0,
       unlockedAchievements: [],
-      preferences: { darkMode: false, language: Language.EN, accent: 'monochrome' },
+      preferences: { 
+          darkMode: false, 
+          language: Language.EN, 
+          accent: 'monochrome',
+          focusDuration: 25,
+          shortBreakDuration: 5,
+          longBreakDuration: 15,
+          enableNativeNotifications: false
+      },
       createdAt: Date.now(),
       masterDeck: [],
       xpBoostExpiresAt: 0,
-      streakFreezeActive: false
+      streakFreezeActive: false,
+      legacy: { note: '', unlockDate: 0, isLocked: false },
+      todoList: [],
+      hasSeenOnboarding: false,
+      avatar: '👤'
     };
 
     db.users.push(newUser);

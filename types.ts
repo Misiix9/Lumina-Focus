@@ -6,7 +6,7 @@ export enum Language {
   HU = 'HU'
 }
 
-export type AccentColor = 'monochrome' | 'neon-green' | 'electric-blue' | 'crimson-red' | 'cyber-yellow';
+export type AccentColor = string; // Allow custom hex strings
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -48,13 +48,13 @@ export interface ExamQuestion {
 }
 
 export interface Flashcard {
-  id: string; // Added ID for global tracking
-  subjectId: string; // Link to subject
+  id: string; 
+  subjectId: string; 
   front: string;
   back: string;
-  nextReviewDate: number; // SRS timestamp
-  interval: number; // SRS interval in days
-  ease: number; // SRS ease factor
+  nextReviewDate: number; 
+  interval: number; 
+  ease: number; 
   repetitions: number;
 }
 
@@ -82,6 +82,7 @@ export interface StudySession {
   timestamp: number;
   notes: string;
   mood?: 'happy' | 'neutral' | 'tired' | 'stressed';
+  distractionCount?: number;
   aiAnalysis?: AiAnalysis;
   quiz?: {
     questions: QuizQuestion[];
@@ -98,7 +99,7 @@ export interface Boss {
   hp: number;
   maxHp: number;
   level: number;
-  image: string; // emoji or url
+  image: string; 
   description: string;
 }
 
@@ -106,7 +107,7 @@ export interface Pet {
   name: string;
   stage: 'egg' | 'baby' | 'teen' | 'adult';
   xp: number;
-  type: 'geometry' | 'organic' | 'mech' | 'void'; // Based on subject
+  type: 'geometry' | 'organic' | 'mech' | 'void'; 
   hunger: number;
   happiness: number;
 }
@@ -128,13 +129,39 @@ export interface ShopItem {
   effect?: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  timestamp: number;
+}
+
 export interface Guild {
   id: string;
   name: string;
   members: number;
   totalXp: number;
   banner: string;
-  chat?: { user: string, msg: string }[]; // Simulated chat
+  chat?: ChatMessage[]; 
+}
+
+export interface SkillNode {
+  id: string;
+  label: string;
+  description: string;
+  requiredLevel: number;
+  icon: string;
+  parentId?: string;
+}
+
+// --- UTILITY TYPES ---
+
+export interface Todo {
+  id: string;
+  text: string;
+  quadrant: 'q1' | 'q2' | 'q3' | 'q4'; // Urgent/Important matrix
+  completed: boolean;
 }
 
 // --- AI LAB TYPES ---
@@ -156,6 +183,13 @@ export interface ConceptMapData {
   edges: ConceptEdge[];
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning';
+}
+
 export interface User {
   id: string;
   username: string;
@@ -163,8 +197,9 @@ export interface User {
   level: number;
   xp: number;
   streak: number;
-  coins: number; // New currency for shop
+  coins: number; 
   lastStudyDate: number | null;
+  lastLoginDate?: number;
   subjects: Subject[];
   sessions: StudySession[];
   quests: Quest[];
@@ -173,22 +208,35 @@ export interface User {
     darkMode: boolean;
     language: Language;
     accent: AccentColor;
+    focusDuration: number;
+    shortBreakDuration: number;
+    longBreakDuration: number;
+    enableNativeNotifications?: boolean;
   };
   createdAt: number;
   unlockedAchievements: string[];
   passwordHash?: string;
+  hasSeenOnboarding?: boolean;
   
   // New Features
   pet?: Pet;
-  inventory: string[]; // Shop item IDs
-  stocks: { [symbol: string]: number }; // Owned stocks
+  avatar?: string;
+  inventory: string[]; 
+  stocks: { [symbol: string]: number }; 
   activeBoss?: Boss;
   guildId?: string;
+  todoList: Todo[];
   
   // SRS & Effects
   masterDeck: Flashcard[];
-  xpBoostExpiresAt?: number; // Timestamp
+  xpBoostExpiresAt?: number; 
   streakFreezeActive?: boolean;
+  
+  legacy?: {
+      note: string;
+      unlockDate: number;
+      isLocked: boolean;
+  };
 }
 
 export interface TimerState {
@@ -204,7 +252,7 @@ export interface MonoCardProps {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   noPadding?: boolean;
   accent?: AccentColor;
 }

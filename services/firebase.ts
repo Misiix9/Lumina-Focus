@@ -1,8 +1,8 @@
 
 import { initializeApp, FirebaseApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User as FirebaseUser, Auth } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, getDocs, Firestore, addDoc, where } from "firebase/firestore";
-import { User, FirebaseConfig, Guild, LeaderboardEntry, Language } from '../types';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User as FirebaseUser, Auth, setPersistence, browserLocalPersistence, browserSessionPersistence } from "firebase/auth";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, getDocs, Firestore, addDoc, where, onSnapshot } from "firebase/firestore";
+import { User, FirebaseConfig, Guild, LeaderboardEntry, Language, ChatMessage } from '../types';
 import { StorageService } from './storageService';
 import { DEFAULT_SUBJECTS } from "../constants";
 
@@ -10,7 +10,7 @@ let app: FirebaseApp | undefined;
 let auth: Auth | undefined;
 let db: Firestore | undefined;
 let isInitialized = false;
-let useFallback = false; // Flag to track if we are using local storage
+let useFallback = false; 
 
 export const FirebaseService = {
   
@@ -30,9 +30,8 @@ export const FirebaseService = {
       console.log("🔥 Firebase initialized in Production Mode");
       return true;
     } catch (e) {
-      console.error("Firebase init failed, switching to Local Storage:", e);
-      useFallback = true;
-      return true; // Return true so the app continues to load
+      console.error("Firebase init failed:", e);
+      return false; 
     }
   },
 
@@ -40,15 +39,9 @@ export const FirebaseService = {
       return useFallback;
   },
   
-  async register(email: string, password: string, username: string): Promise<User> {
-    if (useFallback) return StorageService.register(username, password);
-
-    try {
-        if (!isInitialized || !auth || !db) throw new Error("Firebase not initialized");
-        
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const newUser: User = {
-          id: userCredential.user.uid,
+  _createDefaultUser(id: string, email: string, username: string): User {
+      return {
+          id,
           username,
           email,
           level: 1,
@@ -59,92 +52,108 @@ export const FirebaseService = {
           stocks: {},
           pet: { name: 'Orb', stage: 'egg', xp: 0, type: 'void', hunger: 100, happiness: 100 },
           lastStudyDate: null,
+          lastLoginDate: Date.now(),
           subjects: DEFAULT_SUBJECTS.map(s => ({...s, sessionsCount: 0})),
           sessions: [],
           quests: [], 
           lastQuestGeneration: 0,
           unlockedAchievements: [],
-          preferences: { darkMode: false, language: Language.EN, accent: 'monochrome' },
+          preferences: { 
+              darkMode: false, 
+              language: Language.EN, 
+              accent: 'monochrome',
+              focusDuration: 25,
+              shortBreakDuration: 5,
+              longBreakDuration: 15,
+              enableNativeNotifications: false
+          },
           createdAt: Date.now(),
           masterDeck: [],
           xpBoostExpiresAt: 0,
-          streakFreezeActive: false
-        };
+          streakFreezeActive: false,
+          legacy: { note: '', unlockDate: 0, isLocked: false },
+          todoList: [],
+          hasSeenOnboarding: false,
+          avatar: '👤'
+      };
+  },
+
+  async register(email: string, password: string, username: string): Promise<User> {
+    if (useFallback) return StorageService.register(username, password);
+
+    if (!isInitialized || !auth || !db) throw new Error("Firebase not initialized");
+    
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const newUser = this._createDefaultUser(userCredential.user.uid, email, username);
         
-        await setDoc(doc(db, "users", newUser.id), newUser);
+        try {
+            await setDoc(doc(db, "users", newUser.id), newUser);
+        } catch (dbError: any) {
+            console.error("DB Creation failed during register:", dbError);
+            // Suppress error to allow access
+        }
         return newUser;
     } catch (e: any) {
-        // CRITICAL: Check for specific auth errors to prevent false fallback
-        const authErrors = ['auth/email-already-in-use', 'auth/invalid-email', 'auth/weak-password', 'auth/missing-email'];
-        if (authErrors.includes(e.code)) {
-            throw e; // Rethrow to UI, do not fallback
-        }
-
-        console.warn("Firebase register system error, falling back:", e.message);
-        useFallback = true;
-        return StorageService.register(username, password);
+        throw e;
     }
   },
 
-  async login(identifier: string, password: string): Promise<User> {
+  async login(identifier: string, password: string, rememberMe: boolean = false): Promise<User> {
     if (useFallback) return StorageService.login(identifier, password);
 
+    if (!isInitialized || !auth || !db) throw new Error("Firebase not initialized");
+    
+    // Handle Persistence
     try {
-        if (!isInitialized || !auth || !db) throw new Error("Firebase not initialized");
-        
-        let email = identifier;
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+    } catch (e) {
+        console.warn("Persistence setting failed", e);
+    }
+    
+    let email = identifier;
 
-        // Logic to allow login via Username
-        if (!identifier.includes('@')) {
-            try {
-                const q = query(collection(db, "users"), where("username", "==", identifier));
-                const querySnapshot = await getDocs(q);
-                if (!querySnapshot.empty) {
-                    email = querySnapshot.docs[0].data().email;
-                } else {
-                    // If we can't find the username, we throw an error that will be caught below
-                    // and rethrown to the UI, instead of falling back to local storage.
-                    throw new Error("Username not found.");
-                }
-            } catch (queryError: any) {
-                // If permission denied (security rules), we must tell the user to use Email.
-                if (queryError.code === 'permission-denied') {
-                    throw new Error("Please log in with Email (Username lookup restricted).");
-                }
-                throw queryError;
+    if (!identifier.includes('@')) {
+        try {
+            const q = query(collection(db, "users"), where("username", "==", identifier));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                email = querySnapshot.docs[0].data().email;
+            } else {
+                // Failover to prevent confusing error
+                throw new Error("Username not found.");
             }
+        } catch (queryError: any) {
+             throw new Error("Connection issue or Username not found. Please log in with your EMAIL address.");
         }
-        
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const docRef = doc(db, "users", userCredential.user.uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-            return docSnap.data() as User;
-        } else {
-            throw new Error("User profile not found in database");
+    }
+    
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    
+    const docRef = doc(db, "users", userCredential.user.uid);
+    let docSnap;
+    
+    try {
+        docSnap = await getDoc(docRef);
+    } catch (readError: any) {
+        if (readError.code === 'unavailable' || readError.message.includes('offline')) {
+             // Allow temp access
+             const healedUser = this._createDefaultUser(userCredential.user.uid, userCredential.user.email || email, "TempUser");
+             return healedUser;
         }
-    } catch (e: any) {
-        // CRITICAL: Check for specific auth errors to prevent false fallback
-        // We add 'auth/invalid-email' here so typing a bad username doesn't switch the app to offline mode.
-        const authErrors = [
-            'auth/invalid-credential', 
-            'auth/user-not-found', 
-            'auth/wrong-password', 
-            'auth/user-disabled', 
-            'auth/too-many-requests',
-            'auth/invalid-email',
-            'permission-denied'
-        ];
-        
-        // If it's a known user error (or our custom Username errors), show it to the user.
-        if (authErrors.includes(e.code) || e.message === "Username not found." || e.message.includes("Please log in with Email")) {
-            throw e; 
-        }
-
-        console.warn("Firebase login system error, falling back:", e.message);
-        useFallback = true;
-        return StorageService.login(identifier, password);
+        throw readError;
+    }
+    
+    if (docSnap.exists()) {
+        return docSnap.data() as User;
+    } else {
+        const healedUser = this._createDefaultUser(
+            userCredential.user.uid, 
+            userCredential.user.email || email, 
+            identifier.includes('@') ? identifier.split('@')[0] : identifier
+        );
+        await setDoc(docRef, healedUser);
+        return healedUser;
     }
   },
 
@@ -154,8 +163,7 @@ export const FirebaseService = {
         if (!isInitialized || !auth) return;
         await signOut(auth);
     } catch (e) {
-        useFallback = true;
-        StorageService.logout();
+        console.error("Logout error", e);
     }
   },
 
@@ -165,16 +173,15 @@ export const FirebaseService = {
     try {
         if (!isInitialized || !auth || !db) return null;
         const currentUser = auth.currentUser;
-        if (!currentUser) {
-            return StorageService.getCurrentUser(); 
-        }
+        if (!currentUser) return null;
         
         const docSnap = await getDoc(doc(db, "users", currentUser.uid));
-        return docSnap.exists() ? docSnap.data() as User : null;
+        if (docSnap.exists()) {
+            return docSnap.data() as User;
+        }
+        return null;
     } catch (e) {
-        console.warn("Get Current User failed, fallback:", e);
-        useFallback = true;
-        return StorageService.getCurrentUser();
+        return null;
     }
   },
 
@@ -183,10 +190,11 @@ export const FirebaseService = {
     try {
         if (!isInitialized || !db) throw new Error("DB not initialized");
         await updateDoc(doc(db, "users", user.id), { ...user });
-    } catch (e) {
-        console.warn("Update failed, fallback:", e);
-        useFallback = true;
-        StorageService.updateUser(user);
+    } catch (e: any) {
+       // Silent fail in prod to avoid annoying user, relies on local state
+       if(e.code === 'permission-denied') {
+           throw new Error("Database Permission Denied. Please check Firebase Rules.");
+       }
     }
   },
 
@@ -208,18 +216,10 @@ export const FirebaseService = {
         };
         });
     } catch (e: any) {
-        // CRITICAL: Handle missing index error gracefully
-        if (e.code === 'failed-precondition') {
-             console.warn("⚠️ FIRESTORE INDEX MISSING. Leaderboard requires an index. Check console for link.");
-             console.warn(e.message);
-        }
-        // Fallback to local storage or empty so app doesn't crash
-        useFallback = true;
-        return StorageService.getLeaderboard();
+        return [];
     }
   },
 
-  // --- SOCIAL / GUILDS ---
   async getGuilds(): Promise<Guild[]> {
       if (useFallback) return StorageService.getGuilds();
       try {
@@ -228,55 +228,82 @@ export const FirebaseService = {
           const snapshot = await getDocs(q);
           return snapshot.docs.map(d => ({id: d.id, ...d.data()} as Guild));
       } catch(e) {
-          console.warn("Guild fetch failed, fallback:", e);
-          useFallback = true;
-          return StorageService.getGuilds();
+          return [];
       }
   },
 
   async createGuild(name: string, banner: string, ownerUser: User): Promise<Guild> {
       if (useFallback) return StorageService.createGuild(name, banner, ownerUser);
-      try {
-          if(!isInitialized || !db) throw new Error("DB not ready");
-          const newGuild: Omit<Guild, 'id'> = {
-              name,
-              banner,
-              members: 1,
-              totalXp: ownerUser.xp,
-              chat: []
-          };
-          const docRef = await addDoc(collection(db, "guilds"), newGuild);
-          const guild = { id: docRef.id, ...newGuild };
-          
-          ownerUser.guildId = guild.id;
-          await this.updateUser(ownerUser);
-          return guild;
-      } catch(e) {
-          useFallback = true;
-          return StorageService.createGuild(name, banner, ownerUser);
-      }
+      if(!isInitialized || !db) throw new Error("DB not ready");
+      
+      const newGuild: Omit<Guild, 'id'> = {
+          name,
+          banner,
+          members: 1,
+          totalXp: ownerUser.xp,
+          chat: []
+      };
+      const docRef = await addDoc(collection(db, "guilds"), newGuild);
+      const guild = { id: docRef.id, ...newGuild };
+      
+      ownerUser.guildId = guild.id;
+      await this.updateUser(ownerUser);
+      return guild;
   },
 
   async joinGuild(guildId: string, user: User): Promise<void> {
       if (useFallback) return StorageService.joinGuild(guildId, user);
+      if(!isInitialized || !db) throw new Error("DB not ready");
+      
+      const guildRef = doc(db, "guilds", guildId);
+      const guildSnap = await getDoc(guildRef);
+      if(!guildSnap.exists()) throw new Error("Guild not found");
+      
+      const guildData = guildSnap.data() as Guild;
+      await updateDoc(guildRef, {
+          members: guildData.members + 1,
+          totalXp: guildData.totalXp + user.xp
+      });
+      
+      user.guildId = guildId;
+      await this.updateUser(user);
+  },
+
+  // --- CHAT ---
+  subscribeToGuildChat(guildId: string, callback: (messages: ChatMessage[]) => void) {
+      if (useFallback || !isInitialized || !db) return () => {};
+      
+      const q = query(
+          collection(db, `guilds/${guildId}/messages`), 
+          orderBy("timestamp", "desc"), 
+          limit(50)
+      );
+      
+      return onSnapshot(q, (snapshot) => {
+          const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+          callback(msgs.reverse());
+      }, (error) => {
+          console.error("Chat subscription error. Check Firestore Rules.", error);
+          // Return empty to prevent UI crash
+          callback([]);
+      });
+  },
+
+  async sendGuildMessage(guildId: string, user: User, text: string) {
+      if (useFallback || !isInitialized || !db) return;
+      
+      const msg: Omit<ChatMessage, 'id'> = {
+          userId: user.id,
+          username: user.username,
+          text,
+          timestamp: Date.now()
+      };
+      
       try {
-          if(!isInitialized || !db) throw new Error("DB not ready");
-          
-          const guildRef = doc(db, "guilds", guildId);
-          const guildSnap = await getDoc(guildRef);
-          if(!guildSnap.exists()) throw new Error("Guild not found");
-          
-          const guildData = guildSnap.data() as Guild;
-          await updateDoc(guildRef, {
-              members: guildData.members + 1,
-              totalXp: guildData.totalXp + user.xp
-          });
-          
-          user.guildId = guildId;
-          await this.updateUser(user);
+          await addDoc(collection(db, `guilds/${guildId}/messages`), msg);
       } catch (e) {
-          useFallback = true;
-          StorageService.joinGuild(guildId, user);
+          console.error("Failed to send message. Permission denied?", e);
+          throw e;
       }
   }
 };
